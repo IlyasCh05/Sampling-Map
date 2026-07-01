@@ -89,8 +89,8 @@ function getSelectedRecords() {
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-function initMap() {
-  state.map = L.map("map", { zoomControl: true }).setView(DEFAULT_CENTER, 10);
+function initMap(center = DEFAULT_CENTER, zoom = 10) {
+  state.map = L.map("map", { zoomControl: true }).setView(center, zoom);
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 20,
@@ -98,7 +98,7 @@ function initMap() {
   }).addTo(state.map);
 
   state.recordLayer = L.layerGroup().addTo(state.map);
-  state.radiusCircle = L.circle(DEFAULT_CENTER, {
+  state.radiusCircle = L.circle(center, {
     radius: state.radiusMeters,
     color: "#5eead4",
     fillColor: "#5eead4",
@@ -377,6 +377,21 @@ function locateUser() {
   );
 }
 
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation not supported"));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve(position.coords),
+      (error) => reject(error),
+      { timeout: 9000, maximumAge: 30000, enableHighAccuracy: true }
+    );
+  });
+}
+
 function useMapCenter() {
   const center = state.map.getCenter();
   setDraftLocation(center.lat, center.lng, false);
@@ -579,14 +594,26 @@ function updateUIText() {
   updateDraftUI();
 }
 
-function initialize() {
+async function initialize() {
   if (typeof L === "undefined") {
     window.alert(t('leafletError'));
     return;
   }
 
   initDOM();
-  initMap();
+
+  let initialCenter = DEFAULT_CENTER;
+  let initialZoom = 10;
+
+  try {
+    const coords = await getCurrentPosition();
+    initialCenter = [coords.latitude, coords.longitude];
+    initialZoom = 16;
+  } catch {
+    // Keep the default center when location access is unavailable.
+  }
+
+  initMap(initialCenter, initialZoom);
   updateUIText();
   bindEvents();
   renderRadius();
@@ -594,18 +621,8 @@ function initialize() {
   updateDraftUI();
   renderRecords();
 
-  if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        state.map.setView([latitude, longitude], 16, { animate: true });
-        setDraftLocation(latitude, longitude, false);
-      },
-      () => {
-        state.map.setView(DEFAULT_CENTER, 11, { animate: true });
-      },
-      { timeout: 9000, maximumAge: 30000 }
-    );
+  if (initialCenter !== DEFAULT_CENTER) {
+    setDraftLocation(initialCenter[0], initialCenter[1], false);
   }
 }
 
